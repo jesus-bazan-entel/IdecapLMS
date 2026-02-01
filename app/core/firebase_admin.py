@@ -5,6 +5,10 @@ import firebase_admin
 from firebase_admin import credentials, firestore, storage as fb_storage, auth
 from app.config import settings
 import os
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Global Firebase instances
 db = None
@@ -18,25 +22,46 @@ def initialize_firebase():
     try:
         # Check if already initialized
         firebase_admin.get_app()
+        logger.info("Firebase already initialized")
     except ValueError:
         # Initialize Firebase Admin
         cred_path = settings.firebase_service_account_path
+        logger.info(f"Firebase service account path: {cred_path}")
+        logger.info(f"Firebase project ID: {settings.firebase_project_id}")
+        logger.info(f"Firebase storage bucket: {settings.firebase_storage_bucket}")
 
-        if os.path.exists(cred_path):
-            cred = credentials.Certificate(cred_path)
-        else:
-            # Use default credentials (for Cloud Run, etc.)
-            cred = credentials.ApplicationDefault()
+        try:
+            if os.path.exists(cred_path):
+                logger.info("Using service account file for credentials")
+                cred = credentials.Certificate(cred_path)
+            else:
+                logger.info("Using Application Default Credentials (Cloud Run)")
+                cred = credentials.ApplicationDefault()
 
-        firebase_admin.initialize_app(cred, {
-            'storageBucket': settings.firebase_storage_bucket
-        })
+            firebase_admin.initialize_app(cred, {
+                'storageBucket': settings.firebase_storage_bucket,
+                'projectId': settings.firebase_project_id
+            })
+            logger.info("Firebase Admin SDK initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize Firebase: {e}")
+            raise
 
     # Initialize Firestore
-    db = firestore.client()
+    try:
+        db = firestore.client()
+        logger.info("Firestore client initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize Firestore: {e}")
+        raise
 
     # Initialize Storage
-    storage = fb_storage.bucket()
+    try:
+        storage = fb_storage.bucket()
+        logger.info("Firebase Storage initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize Storage: {e}")
+        # Storage is optional, don't raise
 
     return db, storage
 

@@ -39,7 +39,7 @@ steps:
       - '--max-instances'
       - '3'
       - '--set-env-vars'
-      - 'DEBUG=false,API_HOST=0.0.0.0,API_PORT=8000'
+      - 'DEBUG=false,API_HOST=0.0.0.0,API_PORT=8000,FIREBASE_PROJECT_ID=apololms,FIREBASE_STORAGE_BUCKET=apololms.appspot.com,CORS_ORIGINS=http://localhost:3000,http://localhost:5173,https://apololms.web.app,https://apololms.firebaseapp.com'
       - '--set-secrets'
       - 'JWT_SECRET_KEY=jwt-secret-key:latest,GEMINI_API_KEY=gemini-api-key:latest'
 

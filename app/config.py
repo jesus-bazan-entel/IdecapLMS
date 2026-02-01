@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # Firebase
     firebase_project_id: str = "apololms"
     firebase_service_account_path: str = "./firebase-service-account.json"
-    firebase_storage_bucket: str = "apololms.firebasestorage.app"
+    firebase_storage_bucket: str = "apololms.appspot.com"
 
     # Google AI (Gemini)
     google_api_key: str = ""
