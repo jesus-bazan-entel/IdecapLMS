@@ -17,7 +17,17 @@ ENV/
 # Firebase credentials (NEVER commit these)
 *-firebase-adminsdk*.json
 firebase-credentials.json
+firebase-service-account.json
 service-account.json
+*.json.bak
+
+# Windows reserved names
+nul
+NUL
+con
+CON
+aux
+AUX
 
 # IDE
 .idea/
