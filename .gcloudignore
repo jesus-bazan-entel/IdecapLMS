@@ -1,0 +1,16 @@
+# Ignore venv and cache directories
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.gitignore
+*.md
+tests/
+.pytest_cache/
+.mypy_cache/
+.env
+.env.local
+*.ps1
+node_modules/
