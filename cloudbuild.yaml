@@ -7,17 +7,10 @@ steps:
     args:
       - 'build'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/apololms-api:$COMMIT_SHA'
-      - '-t'
       - 'gcr.io/$PROJECT_ID/apololms-api:latest'
       - '.'
 
   # Push the Docker image to Container Registry
-  - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'push'
-      - 'gcr.io/$PROJECT_ID/apololms-api:$COMMIT_SHA'
-
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
@@ -31,7 +24,7 @@ steps:
       - 'deploy'
       - 'apololms-api'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/apololms-api:$COMMIT_SHA'
+      - 'gcr.io/$PROJECT_ID/apololms-api:latest'
       - '--region'
       - 'us-central1'
       - '--platform'
@@ -51,7 +44,6 @@ steps:
       - 'JWT_SECRET_KEY=jwt-secret-key:latest,GEMINI_API_KEY=gemini-api-key:latest'
 
 images:
-  - 'gcr.io/$PROJECT_ID/apololms-api:$COMMIT_SHA'
   - 'gcr.io/$PROJECT_ID/apololms-api:latest'
 
 timeout: '1200s'
