@@ -7,7 +7,7 @@ import uuid
 from typing import Optional, BinaryIO
 from datetime import datetime, timedelta
 
-from app.core.firebase_admin import get_storage_bucket
+from app.core.firebase_admin import get_storage
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ class StorageService:
     def _get_bucket(self):
         """Get Firebase Storage bucket"""
         if self._bucket is None:
-            self._bucket = get_storage_bucket()
+            self._bucket = get_storage()
         return self._bucket
 
     async def upload_file(
