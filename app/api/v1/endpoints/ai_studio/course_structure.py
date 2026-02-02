@@ -212,7 +212,7 @@ IMPORTANTE: Responde ÚNICAMENTE con el JSON válido, sin explicaciones adiciona
                             data=file_content,
                             mime_type="application/pdf"
                         ),
-                        types.Part.from_text(extraction_prompt)
+                        types.Part(text=extraction_prompt)
                     ]
                 )
             ],
