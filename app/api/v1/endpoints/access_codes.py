@@ -148,10 +148,11 @@ async def generate_access_code(
             detail="Failed to generate unique code"
         )
 
-    # Deactivate any previous unused codes for this student
-    previous_codes = access_codes_ref.where("studentId", "==", request.student_id).where("used", "==", False).stream()
+    # Deactivate any previous active codes for this student
+    previous_codes = access_codes_ref.where("studentId", "==", request.student_id).stream()
     for doc in previous_codes:
-        doc.reference.update({"used": True, "deactivatedAt": datetime.utcnow()})
+        if not doc.to_dict().get("deactivated"):
+            doc.reference.update({"deactivated": True, "deactivatedAt": datetime.utcnow()})
 
     # Calculate expiration
     expires_at = None
@@ -226,11 +227,17 @@ async def validate_access_code(
         code_doc = docs[0]
         code_data = code_doc.to_dict()
 
-        # Check if already used
-        if code_data.get("used"):
+        # Note: Codes are reusable - we don't check "used" flag anymore
+        # Codes only become invalid when:
+        # 1. They expire (if expires_at is set)
+        # 2. A new code is generated for the student (old codes are deactivated)
+        # 3. The code is manually revoked
+
+        # Check if code was deactivated (replaced by a new code)
+        if code_data.get("deactivated") or code_data.get("deactivatedAt"):
             return AccessCodeValidateResponse(
                 valid=False,
-                message="Este código ya fue utilizado"
+                message="Este código fue reemplazado por uno nuevo"
             )
 
         # Check expiration
@@ -252,10 +259,10 @@ async def validate_access_code(
                 message="Estudiante no encontrado"
             )
 
-        # Mark code as used
+        # Update last used timestamp (but don't mark as "used" - codes are reusable)
         code_doc.reference.update({
-            "used": True,
-            "usedAt": datetime.utcnow(),
+            "lastUsedAt": datetime.utcnow(),
+            "useCount": (code_data.get("useCount") or 0) + 1,
         })
 
     # Check if student is disabled
