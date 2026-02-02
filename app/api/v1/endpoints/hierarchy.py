@@ -1,10 +1,11 @@
 """
 Course hierarchy endpoints
 Levels → Modules → Sections → Lessons
+With metadata and progression rules for Learning Path
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
 import uuid
@@ -15,11 +16,44 @@ from app.core.firebase_admin import get_firestore, get_document
 router = APIRouter()
 
 
+# ============== ENUMS ==============
 class LessonContentType(str, Enum):
     VIDEO = "video"
     ARTICLE = "article"
     QUIZ = "quiz"
     YOUTUBE = "youtube"
+    AUDIO = "audio"
+    IA = "ia"
+
+
+class Difficulty(str, Enum):
+    BASICO = "basico"
+    INTERMEDIO = "intermedio"
+    AVANZADO = "avanzado"
+
+
+# ============== SHARED SCHEMAS ==============
+class NodeMetadata(BaseModel):
+    """Metadata for learning path nodes"""
+    objective: Optional[str] = None
+    estimated_minutes: Optional[int] = None
+    difficulty: Optional[Difficulty] = None
+    tags: Optional[List[str]] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
+
+
+class ProgressionRules(BaseModel):
+    """Rules for progression through the learning path"""
+    require_previous_completion: bool = True
+    minimum_score_percent: Optional[int] = None
+    minimum_completion_percent: Optional[int] = None
+    minimum_duration_days: Optional[int] = None
+
+
+class ReorderRequest(BaseModel):
+    """Request to reorder items"""
+    order: List[str]  # List of IDs in new order
 
 
 # ============== LEVEL SCHEMAS ==============
@@ -27,12 +61,16 @@ class LevelCreateRequest(BaseModel):
     name: str
     description: Optional[str] = None
     order: int = 0
+    metadata: Optional[NodeMetadata] = None
+    progression_rules: Optional[ProgressionRules] = None
 
 
 class LevelUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     order: Optional[int] = None
+    metadata: Optional[NodeMetadata] = None
+    progression_rules: Optional[ProgressionRules] = None
 
 
 class LevelResponse(BaseModel):
@@ -42,6 +80,8 @@ class LevelResponse(BaseModel):
     description: Optional[str] = None
     order: int = 0
     created_at: Optional[datetime] = None
+    metadata: Optional[NodeMetadata] = None
+    progression_rules: Optional[ProgressionRules] = None
 
 
 # ============== MODULE SCHEMAS ==============
@@ -50,6 +90,8 @@ class ModuleCreateRequest(BaseModel):
     description: Optional[str] = None
     order: int = 0
     total_classes: int = 16
+    metadata: Optional[NodeMetadata] = None
+    progression_rules: Optional[ProgressionRules] = None
 
 
 class ModuleUpdateRequest(BaseModel):
@@ -57,6 +99,8 @@ class ModuleUpdateRequest(BaseModel):
     description: Optional[str] = None
     order: Optional[int] = None
     total_classes: Optional[int] = None
+    metadata: Optional[NodeMetadata] = None
+    progression_rules: Optional[ProgressionRules] = None
 
 
 class ModuleResponse(BaseModel):
@@ -68,6 +112,8 @@ class ModuleResponse(BaseModel):
     order: int = 0
     total_classes: int = 16
     created_at: Optional[datetime] = None
+    metadata: Optional[NodeMetadata] = None
+    progression_rules: Optional[ProgressionRules] = None
 
 
 # ============== SECTION SCHEMAS ==============
@@ -75,12 +121,16 @@ class SectionCreateRequest(BaseModel):
     name: str
     description: Optional[str] = None
     order: int = 0
+    metadata: Optional[NodeMetadata] = None
+    progression_rules: Optional[ProgressionRules] = None
 
 
 class SectionUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     order: Optional[int] = None
+    metadata: Optional[NodeMetadata] = None
+    progression_rules: Optional[ProgressionRules] = None
 
 
 class SectionResponse(BaseModel):
@@ -92,6 +142,8 @@ class SectionResponse(BaseModel):
     description: Optional[str] = None
     order: int = 0
     created_at: Optional[datetime] = None
+    metadata: Optional[NodeMetadata] = None
+    progression_rules: Optional[ProgressionRules] = None
 
 
 # ============== LESSON SCHEMAS ==============
@@ -120,10 +172,11 @@ class LessonCreateRequest(BaseModel):
     content_type: LessonContentType = LessonContentType.VIDEO
     video_url: Optional[str] = None
     youtube_video_id: Optional[str] = None
-    lesson_body: Optional[str] = None  # HTML content for articles
+    lesson_body: Optional[str] = None
     duration: Optional[str] = None
     questions: List[Question] = []
     materials: List[LessonMaterial] = []
+    metadata: Optional[NodeMetadata] = None
 
 
 class LessonUpdateRequest(BaseModel):
@@ -136,6 +189,7 @@ class LessonUpdateRequest(BaseModel):
     duration: Optional[str] = None
     questions: Optional[List[Question]] = None
     materials: Optional[List[LessonMaterial]] = None
+    metadata: Optional[NodeMetadata] = None
 
 
 class LessonResponse(BaseModel):
@@ -154,6 +208,7 @@ class LessonResponse(BaseModel):
     questions: List[Question] = []
     materials: List[LessonMaterial] = []
     created_at: Optional[datetime] = None
+    metadata: Optional[NodeMetadata] = None
 
 
 # ============== HELPER FUNCTIONS ==============
@@ -177,6 +232,60 @@ def _get_lessons_ref(db, course_id: str, level_id: str, module_id: str, section_
     return _get_sections_ref(db, course_id, level_id, module_id).document(section_id).collection("lessons")
 
 
+def _parse_metadata(data: dict) -> Optional[NodeMetadata]:
+    """Parse metadata from Firestore document"""
+    meta = data.get("metadata")
+    if not meta:
+        return None
+    return NodeMetadata(
+        objective=meta.get("objective"),
+        estimated_minutes=meta.get("estimatedMinutes") or meta.get("estimated_minutes"),
+        difficulty=meta.get("difficulty"),
+        tags=meta.get("tags"),
+        icon=meta.get("icon"),
+        color=meta.get("color"),
+    )
+
+
+def _parse_progression_rules(data: dict) -> Optional[ProgressionRules]:
+    """Parse progression rules from Firestore document"""
+    rules = data.get("progressionRules") or data.get("progression_rules")
+    if not rules:
+        return None
+    return ProgressionRules(
+        require_previous_completion=rules.get("requirePreviousCompletion", rules.get("require_previous_completion", True)),
+        minimum_score_percent=rules.get("minimumScorePercent") or rules.get("minimum_score_percent"),
+        minimum_completion_percent=rules.get("minimumCompletionPercent") or rules.get("minimum_completion_percent"),
+        minimum_duration_days=rules.get("minimumDurationDays") or rules.get("minimum_duration_days"),
+    )
+
+
+def _metadata_to_firestore(metadata: Optional[NodeMetadata]) -> Optional[dict]:
+    """Convert metadata to Firestore format"""
+    if not metadata:
+        return None
+    return {
+        "objective": metadata.objective,
+        "estimatedMinutes": metadata.estimated_minutes,
+        "difficulty": metadata.difficulty.value if metadata.difficulty else None,
+        "tags": metadata.tags,
+        "icon": metadata.icon,
+        "color": metadata.color,
+    }
+
+
+def _progression_rules_to_firestore(rules: Optional[ProgressionRules]) -> Optional[dict]:
+    """Convert progression rules to Firestore format"""
+    if not rules:
+        return None
+    return {
+        "requirePreviousCompletion": rules.require_previous_completion,
+        "minimumScorePercent": rules.minimum_score_percent,
+        "minimumCompletionPercent": rules.minimum_completion_percent,
+        "minimumDurationDays": rules.minimum_duration_days,
+    }
+
+
 # ============== LEVEL ENDPOINTS ==============
 @router.get("/{course_id}/levels", response_model=List[LevelResponse])
 async def list_levels(
@@ -186,7 +295,6 @@ async def list_levels(
     """List all levels for a course"""
     db = get_firestore()
 
-    # Verify course exists
     course = await get_document("courses", course_id)
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
@@ -202,6 +310,8 @@ async def list_levels(
             description=doc.to_dict().get("description"),
             order=doc.to_dict().get("order", 0),
             created_at=doc.to_dict().get("createdAt"),
+            metadata=_parse_metadata(doc.to_dict()),
+            progression_rules=_parse_progression_rules(doc.to_dict()),
         )
         for doc in docs
     ]
@@ -228,13 +338,22 @@ async def create_level(
         "createdAt": datetime.utcnow(),
     }
 
+    if request.metadata:
+        level_data["metadata"] = _metadata_to_firestore(request.metadata)
+    if request.progression_rules:
+        level_data["progressionRules"] = _progression_rules_to_firestore(request.progression_rules)
+
     _get_levels_ref(db, course_id).document(level_id).set(level_data)
 
     return LevelResponse(
         id=level_id,
         course_id=course_id,
-        **level_data,
+        name=level_data["name"],
+        description=level_data["description"],
+        order=level_data["order"],
         created_at=level_data["createdAt"],
+        metadata=request.metadata,
+        progression_rules=request.progression_rules,
     )
 
 
@@ -259,6 +378,8 @@ async def get_level(
         description=data.get("description"),
         order=data.get("order", 0),
         created_at=data.get("createdAt"),
+        metadata=_parse_metadata(data),
+        progression_rules=_parse_progression_rules(data),
     )
 
 
@@ -284,6 +405,10 @@ async def update_level(
         update_data["description"] = request.description
     if request.order is not None:
         update_data["order"] = request.order
+    if request.metadata is not None:
+        update_data["metadata"] = _metadata_to_firestore(request.metadata)
+    if request.progression_rules is not None:
+        update_data["progressionRules"] = _progression_rules_to_firestore(request.progression_rules)
 
     if update_data:
         update_data["updatedAt"] = datetime.utcnow()
@@ -297,6 +422,8 @@ async def update_level(
         description=updated.get("description"),
         order=updated.get("order", 0),
         created_at=updated.get("createdAt"),
+        metadata=_parse_metadata(updated),
+        progression_rules=_parse_progression_rules(updated),
     )
 
 
@@ -327,6 +454,27 @@ async def delete_level(
     level_ref.delete()
 
 
+@router.post("/{course_id}/levels/reorder", status_code=200)
+async def reorder_levels(
+    course_id: str,
+    request: ReorderRequest,
+    current_user: dict = Depends(require_author),
+):
+    """Reorder levels"""
+    db = get_firestore()
+
+    course = await get_document("courses", course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    levels_ref = _get_levels_ref(db, course_id)
+
+    for index, level_id in enumerate(request.order):
+        levels_ref.document(level_id).update({"order": index, "updatedAt": datetime.utcnow()})
+
+    return {"message": "Levels reordered successfully"}
+
+
 # ============== MODULE ENDPOINTS ==============
 @router.get("/{course_id}/levels/{level_id}/modules", response_model=List[ModuleResponse])
 async def list_modules(
@@ -350,6 +498,8 @@ async def list_modules(
             order=doc.to_dict().get("order", 0),
             total_classes=doc.to_dict().get("totalClasses", 16),
             created_at=doc.to_dict().get("createdAt"),
+            metadata=_parse_metadata(doc.to_dict()),
+            progression_rules=_parse_progression_rules(doc.to_dict()),
         )
         for doc in docs
     ]
@@ -365,7 +515,6 @@ async def create_module(
     """Create a new module"""
     db = get_firestore()
 
-    # Verify level exists
     if not _get_levels_ref(db, course_id).document(level_id).get().exists:
         raise HTTPException(status_code=404, detail="Level not found")
 
@@ -378,6 +527,11 @@ async def create_module(
         "createdAt": datetime.utcnow(),
     }
 
+    if request.metadata:
+        module_data["metadata"] = _metadata_to_firestore(request.metadata)
+    if request.progression_rules:
+        module_data["progressionRules"] = _progression_rules_to_firestore(request.progression_rules)
+
     _get_modules_ref(db, course_id, level_id).document(module_id).set(module_data)
 
     return ModuleResponse(
@@ -389,6 +543,8 @@ async def create_module(
         order=module_data["order"],
         total_classes=module_data["totalClasses"],
         created_at=module_data["createdAt"],
+        metadata=request.metadata,
+        progression_rules=request.progression_rules,
     )
 
 
@@ -416,6 +572,10 @@ async def update_module(
         update_data["order"] = request.order
     if request.total_classes is not None:
         update_data["totalClasses"] = request.total_classes
+    if request.metadata is not None:
+        update_data["metadata"] = _metadata_to_firestore(request.metadata)
+    if request.progression_rules is not None:
+        update_data["progressionRules"] = _progression_rules_to_firestore(request.progression_rules)
 
     if update_data:
         update_data["updatedAt"] = datetime.utcnow()
@@ -431,6 +591,8 @@ async def update_module(
         order=updated.get("order", 0),
         total_classes=updated.get("totalClasses", 16),
         created_at=updated.get("createdAt"),
+        metadata=_parse_metadata(updated),
+        progression_rules=_parse_progression_rules(updated),
     )
 
 
@@ -448,7 +610,6 @@ async def delete_module(
     if not module_ref.get().exists:
         raise HTTPException(status_code=404, detail="Module not found")
 
-    # Delete all sections (cascading)
     sections_ref = _get_sections_ref(db, course_id, level_id, module_id)
     for section_doc in sections_ref.stream():
         lessons_ref = _get_lessons_ref(db, course_id, level_id, module_id, section_doc.id)
@@ -457,6 +618,24 @@ async def delete_module(
         section_doc.reference.delete()
 
     module_ref.delete()
+
+
+@router.post("/{course_id}/levels/{level_id}/modules/reorder", status_code=200)
+async def reorder_modules(
+    course_id: str,
+    level_id: str,
+    request: ReorderRequest,
+    current_user: dict = Depends(require_author),
+):
+    """Reorder modules within a level"""
+    db = get_firestore()
+
+    modules_ref = _get_modules_ref(db, course_id, level_id)
+
+    for index, module_id in enumerate(request.order):
+        modules_ref.document(module_id).update({"order": index, "updatedAt": datetime.utcnow()})
+
+    return {"message": "Modules reordered successfully"}
 
 
 # ============== SECTION ENDPOINTS ==============
@@ -483,6 +662,8 @@ async def list_sections(
             description=doc.to_dict().get("description"),
             order=doc.to_dict().get("order", 0),
             created_at=doc.to_dict().get("createdAt"),
+            metadata=_parse_metadata(doc.to_dict()),
+            progression_rules=_parse_progression_rules(doc.to_dict()),
         )
         for doc in docs
     ]
@@ -499,7 +680,6 @@ async def create_section(
     """Create a new section"""
     db = get_firestore()
 
-    # Verify module exists
     if not _get_modules_ref(db, course_id, level_id).document(module_id).get().exists:
         raise HTTPException(status_code=404, detail="Module not found")
 
@@ -510,6 +690,11 @@ async def create_section(
         "order": request.order,
         "createdAt": datetime.utcnow(),
     }
+
+    if request.metadata:
+        section_data["metadata"] = _metadata_to_firestore(request.metadata)
+    if request.progression_rules:
+        section_data["progressionRules"] = _progression_rules_to_firestore(request.progression_rules)
 
     _get_sections_ref(db, course_id, level_id, module_id).document(section_id).set(section_data)
 
@@ -522,6 +707,8 @@ async def create_section(
         description=section_data["description"],
         order=section_data["order"],
         created_at=section_data["createdAt"],
+        metadata=request.metadata,
+        progression_rules=request.progression_rules,
     )
 
 
@@ -548,6 +735,10 @@ async def update_section(
         update_data["description"] = request.description
     if request.order is not None:
         update_data["order"] = request.order
+    if request.metadata is not None:
+        update_data["metadata"] = _metadata_to_firestore(request.metadata)
+    if request.progression_rules is not None:
+        update_data["progressionRules"] = _progression_rules_to_firestore(request.progression_rules)
 
     if update_data:
         update_data["updatedAt"] = datetime.utcnow()
@@ -563,6 +754,8 @@ async def update_section(
         description=updated.get("description"),
         order=updated.get("order", 0),
         created_at=updated.get("createdAt"),
+        metadata=_parse_metadata(updated),
+        progression_rules=_parse_progression_rules(updated),
     )
 
 
@@ -581,12 +774,30 @@ async def delete_section(
     if not section_ref.get().exists:
         raise HTTPException(status_code=404, detail="Section not found")
 
-    # Delete all lessons
     lessons_ref = _get_lessons_ref(db, course_id, level_id, module_id, section_id)
     for lesson_doc in lessons_ref.stream():
         lesson_doc.reference.delete()
 
     section_ref.delete()
+
+
+@router.post("/{course_id}/levels/{level_id}/modules/{module_id}/sections/reorder", status_code=200)
+async def reorder_sections(
+    course_id: str,
+    level_id: str,
+    module_id: str,
+    request: ReorderRequest,
+    current_user: dict = Depends(require_author),
+):
+    """Reorder sections within a module"""
+    db = get_firestore()
+
+    sections_ref = _get_sections_ref(db, course_id, level_id, module_id)
+
+    for index, section_id in enumerate(request.order):
+        sections_ref.document(section_id).update({"order": index, "updatedAt": datetime.utcnow()})
+
+    return {"message": "Sections reordered successfully"}
 
 
 # ============== LESSON ENDPOINTS ==============
@@ -621,6 +832,7 @@ async def list_lessons(
             questions=doc.to_dict().get("questions", []),
             materials=doc.to_dict().get("materials", []),
             created_at=doc.to_dict().get("createdAt"),
+            metadata=_parse_metadata(doc.to_dict()),
         )
         for doc in docs
     ]
@@ -638,7 +850,6 @@ async def create_lesson(
     """Create a new lesson"""
     db = get_firestore()
 
-    # Verify section exists
     if not _get_sections_ref(db, course_id, level_id, module_id).document(section_id).get().exists:
         raise HTTPException(status_code=404, detail="Section not found")
 
@@ -655,6 +866,9 @@ async def create_lesson(
         "materials": [m.model_dump() for m in request.materials],
         "createdAt": datetime.utcnow(),
     }
+
+    if request.metadata:
+        lesson_data["metadata"] = _metadata_to_firestore(request.metadata)
 
     _get_lessons_ref(db, course_id, level_id, module_id, section_id).document(lesson_id).set(lesson_data)
 
@@ -681,6 +895,7 @@ async def create_lesson(
         questions=request.questions,
         materials=request.materials,
         created_at=lesson_data["createdAt"],
+        metadata=request.metadata,
     )
 
 
@@ -719,6 +934,7 @@ async def get_lesson(
         questions=data.get("questions", []),
         materials=data.get("materials", []),
         created_at=data.get("createdAt"),
+        metadata=_parse_metadata(data),
     )
 
 
@@ -758,6 +974,8 @@ async def update_lesson(
         update_data["questions"] = [q.model_dump() for q in request.questions]
     if request.materials is not None:
         update_data["materials"] = [m.model_dump() for m in request.materials]
+    if request.metadata is not None:
+        update_data["metadata"] = _metadata_to_firestore(request.metadata)
 
     if update_data:
         update_data["updatedAt"] = datetime.utcnow()
@@ -780,6 +998,7 @@ async def update_lesson(
         questions=updated.get("questions", []),
         materials=updated.get("materials", []),
         created_at=updated.get("createdAt"),
+        metadata=_parse_metadata(updated),
     )
 
 
@@ -807,3 +1026,23 @@ async def delete_lesson(
     meta = course_data.get("courseMeta", {})
     meta["lessonsCount"] = max(0, meta.get("lessonsCount", 1) - 1)
     course_ref.update({"courseMeta": meta})
+
+
+@router.post("/{course_id}/levels/{level_id}/modules/{module_id}/sections/{section_id}/lessons/reorder", status_code=200)
+async def reorder_lessons(
+    course_id: str,
+    level_id: str,
+    module_id: str,
+    section_id: str,
+    request: ReorderRequest,
+    current_user: dict = Depends(require_author),
+):
+    """Reorder lessons within a section"""
+    db = get_firestore()
+
+    lessons_ref = _get_lessons_ref(db, course_id, level_id, module_id, section_id)
+
+    for index, lesson_id in enumerate(request.order):
+        lessons_ref.document(lesson_id).update({"order": index, "updatedAt": datetime.utcnow()})
+
+    return {"message": "Lessons reordered successfully"}
