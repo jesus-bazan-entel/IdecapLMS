@@ -151,6 +151,13 @@ async def update_document(collection: str, doc_id: str, data: dict) -> bool:
     return True
 
 
+async def set_document(collection: str, doc_id: str, data: dict) -> bool:
+    """Set a document in Firestore (creates or overwrites)"""
+    db = get_firestore()
+    db.collection(collection).document(doc_id).set(data)
+    return True
+
+
 async def delete_document(collection: str, doc_id: str) -> bool:
     """Delete a document from Firestore"""
     db = get_firestore()
