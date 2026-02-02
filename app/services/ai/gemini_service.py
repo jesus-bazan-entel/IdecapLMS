@@ -1,6 +1,7 @@
 """
 Gemini AI Service
 Content generation using Google Gemini (new google-genai SDK)
+Supports both static prompts (backward compatible) and configurable prompts (unified prompt service)
 """
 import json
 import logging
@@ -21,10 +22,11 @@ from app.services.ai.knowledge import (
     get_video_prompt,
     VOICES,
 )
+from app.models.domain.ai.prompt_config import AIModule, GenerationContext
 
 logger = logging.getLogger(__name__)
 
-# Master prompt for Portuguese language learning content
+# Master prompt for Portuguese language learning content (static fallback)
 PORTUGUESE_LEARNING_CONTEXT = get_master_prompt()
 
 
@@ -513,6 +515,286 @@ Responde en JSON:
 """
 
         return await self.generate_json(prompt, system_instruction=system_instruction)
+
+
+    # ============== UNIFIED PROMPT METHODS ==============
+    # These methods use the configurable 3-layer prompt architecture
+
+    async def generate_with_unified_prompt(
+        self,
+        module: AIModule,
+        context: GenerationContext,
+        output_format: str = "json",
+        schema: Optional[Dict] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 8192,
+    ) -> Any:
+        """
+        Generate content using the unified 3-layer prompt system.
+
+        Args:
+            module: AI module (audio, presentation, mindmap, etc.)
+            context: Generation context with topic, level, etc.
+            output_format: "json" or "text"
+            schema: Optional JSON schema for structured output
+            temperature: Generation temperature
+            max_tokens: Maximum output tokens
+
+        Returns:
+            Generated content (dict for JSON, str for text)
+        """
+        from app.services.ai.unified_prompt_service import get_unified_prompt_service
+
+        await self._ensure_initialized()
+
+        # Get assembled prompt from unified service
+        prompt_service = get_unified_prompt_service()
+        full_prompt = await prompt_service.assemble_prompt(module, context)
+
+        # Add output format instructions
+        if output_format == "json":
+            format_instruction = """
+IMPORTANTE: Responde ÚNICAMENTE con JSON válido.
+- No uses markdown (no ```json)
+- No agregues explicaciones antes o después del JSON
+- El JSON debe estar correctamente formateado
+"""
+            if schema:
+                format_instruction += f"\nEsquema esperado:\n{json.dumps(schema, indent=2, ensure_ascii=False)}"
+
+            full_prompt = f"{full_prompt}\n\n{format_instruction}"
+
+        logger.info(f"Generating {module.value} content with unified prompt ({len(full_prompt)} chars)")
+
+        try:
+            response = self._client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
+                    temperature=temperature,
+                    max_output_tokens=max_tokens,
+                )
+            )
+
+            result_text = response.text.strip()
+
+            if output_format == "json":
+                # Clean up JSON response
+                if result_text.startswith("```json"):
+                    result_text = result_text[7:]
+                if result_text.startswith("```"):
+                    result_text = result_text[3:]
+                if result_text.endswith("```"):
+                    result_text = result_text[:-3]
+
+                return json.loads(result_text.strip())
+
+            return result_text
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON response: {e}")
+            raise ValueError(f"Invalid JSON response from Gemini: {e}")
+        except Exception as e:
+            logger.error(f"Generation error: {e}")
+            raise
+
+    async def generate_podcast_unified(
+        self,
+        topic: str,
+        level: str = "básico",
+        duration_minutes: int = 10,
+        speakers: List[Dict] = None,
+        additional_context: Optional[str] = None,
+    ) -> Dict:
+        """
+        Generate podcast script using unified prompts.
+
+        Args:
+            topic: Topic of the podcast
+            level: Difficulty level
+            duration_minutes: Target duration
+            speakers: List of speaker configs
+            additional_context: Extra context
+
+        Returns:
+            Dict with title and segments
+        """
+        if speakers is None:
+            speakers = [
+                {"id": "host_male", "name": "Carlos", "role": "host"},
+                {"id": "host_female", "name": "Ana", "role": "expert"}
+            ]
+
+        context = GenerationContext(
+            tema=topic,
+            nivel=level,
+            duracion=f"{duration_minutes} minutos",
+            additional_context=additional_context,
+            module_params={
+                "speakers": speakers,
+                "format": "conversacional",
+                "word_count": duration_minutes * 130,
+            }
+        )
+
+        schema = {
+            "title": "string",
+            "segments": [
+                {
+                    "order": "number",
+                    "speaker_id": "string",
+                    "speaker_name": "string",
+                    "text": "string",
+                    "duration_estimate": "number"
+                }
+            ]
+        }
+
+        return await self.generate_with_unified_prompt(
+            module=AIModule.PODCAST,
+            context=context,
+            output_format="json",
+            schema=schema,
+            temperature=0.8,
+        )
+
+    async def generate_presentation_unified(
+        self,
+        topic: str,
+        level: str = "básico",
+        num_slides: int = 10,
+        additional_context: Optional[str] = None,
+    ) -> Dict:
+        """Generate presentation using unified prompts."""
+        context = GenerationContext(
+            tema=topic,
+            nivel=level,
+            additional_context=additional_context,
+            module_params={
+                "num_slides": num_slides,
+            }
+        )
+
+        return await self.generate_with_unified_prompt(
+            module=AIModule.PRESENTATION,
+            context=context,
+            output_format="json",
+        )
+
+    async def generate_mindmap_unified(
+        self,
+        topic: str,
+        level: str = "básico",
+        depth: int = 3,
+        additional_context: Optional[str] = None,
+    ) -> Dict:
+        """Generate mind map using unified prompts."""
+        context = GenerationContext(
+            tema=topic,
+            nivel=level,
+            additional_context=additional_context,
+            module_params={
+                "depth": depth,
+            }
+        )
+
+        return await self.generate_with_unified_prompt(
+            module=AIModule.MINDMAP,
+            context=context,
+            output_format="json",
+        )
+
+    async def generate_audio_unified(
+        self,
+        topic: str,
+        level: str = "básico",
+        duration_minutes: int = 5,
+        additional_context: Optional[str] = None,
+    ) -> Dict:
+        """Generate audio script using unified prompts."""
+        context = GenerationContext(
+            tema=topic,
+            nivel=level,
+            duracion=f"{duration_minutes} minutos",
+            additional_context=additional_context,
+        )
+
+        return await self.generate_with_unified_prompt(
+            module=AIModule.AUDIO,
+            context=context,
+            output_format="json",
+        )
+
+    async def generate_flashcards_unified(
+        self,
+        topic: str,
+        level: str = "básico",
+        num_cards: int = 10,
+        additional_context: Optional[str] = None,
+    ) -> Dict:
+        """Generate flashcards using unified prompts."""
+        context = GenerationContext(
+            tema=topic,
+            nivel=level,
+            additional_context=additional_context,
+            module_params={
+                "num_cards": num_cards,
+            }
+        )
+
+        return await self.generate_with_unified_prompt(
+            module=AIModule.FLASHCARD,
+            context=context,
+            output_format="json",
+        )
+
+    async def generate_quiz_unified(
+        self,
+        topic: str,
+        level: str = "básico",
+        num_questions: int = 10,
+        additional_context: Optional[str] = None,
+    ) -> Dict:
+        """Generate quiz using unified prompts."""
+        context = GenerationContext(
+            tema=topic,
+            nivel=level,
+            additional_context=additional_context,
+            module_params={
+                "num_questions": num_questions,
+            }
+        )
+
+        return await self.generate_with_unified_prompt(
+            module=AIModule.QUIZ,
+            context=context,
+            output_format="json",
+        )
+
+    async def generate_video_unified(
+        self,
+        topic: str,
+        level: str = "básico",
+        duration_seconds: int = 60,
+        style: str = "tutorial",
+        additional_context: Optional[str] = None,
+    ) -> Dict:
+        """Generate video content using unified prompts."""
+        context = GenerationContext(
+            tema=topic,
+            nivel=level,
+            duracion=f"{duration_seconds} segundos",
+            additional_context=additional_context,
+            module_params={
+                "style": style,
+            }
+        )
+
+        return await self.generate_with_unified_prompt(
+            module=AIModule.VIDEO,
+            context=context,
+            output_format="json",
+        )
 
 
 # Singleton instance
