@@ -1,6 +1,7 @@
 """
 Courses management endpoints
 CRUD operations for courses
+Updated: 2026-02-02 - force redeploy
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
