@@ -136,67 +136,49 @@ async def parse_course_structure(
         )
 
     # Create the prompt for structure extraction
-    extraction_prompt = """Analiza este documento PDF que contiene la estructura de un curso educativo.
+    extraction_prompt = """Eres un asistente que extrae estructuras de cursos educativos de documentos PDF.
 
-Extrae la jerarquía completa del curso en el siguiente formato JSON:
+TAREA: Analiza el PDF y extrae la estructura del curso en formato JSON.
 
+ESTRUCTURA ESPERADA DEL JSON:
 {
-    "course_name": "Nombre del curso",
-    "course_description": "Descripción general del curso",
-    "levels": [
+  "course_name": "Nombre del curso detectado",
+  "course_description": "Descripción breve",
+  "levels": [
+    {
+      "name": "Nivel Básico",
+      "order": 1,
+      "description": "Duración: X meses",
+      "modules": [
         {
-            "name": "Nombre del nivel (ej: Nivel Básico, Nivel 1, etc.)",
-            "order": 1,
-            "description": "Descripción del nivel",
-            "metadata": {
-                "difficulty": "basico|intermedio|avanzado",
-                "estimated_minutes": 0
-            },
-            "modules": [
-                {
-                    "name": "Nombre del módulo",
-                    "order": 1,
-                    "description": "Descripción del módulo",
-                    "total_classes": 16,
-                    "metadata": {
-                        "difficulty": "basico|intermedio|avanzado"
-                    },
-                    "sections": [
-                        {
-                            "name": "Nombre de la sección/tema",
-                            "order": 1,
-                            "description": "Descripción de la sección",
-                            "lessons": [
-                                {
-                                    "name": "Nombre de la lección/clase",
-                                    "order": 1,
-                                    "content_type": "video",
-                                    "metadata": {
-                                        "objective": "Objetivo de aprendizaje"
-                                    }
-                                }
-                            ]
-                        }
-                    ]
-                }
-            ]
+          "name": "Módulo 1",
+          "order": 1,
+          "total_classes": 16,
+          "sections": [
+            {
+              "name": "Contenido del módulo",
+              "order": 1,
+              "lessons": [
+                {"name": "Clase 1: Tema", "order": 1, "content_type": "video"},
+                {"name": "Clase 2: Tema", "order": 2, "content_type": "video"}
+              ]
+            }
+          ]
         }
-    ]
+      ]
+    }
+  ]
 }
 
-REGLAS IMPORTANTES:
-1. Identifica claramente los NIVELES del curso (Básico, Intermedio, Avanzado o Nivel 1, 2, 3, etc.)
-2. Dentro de cada nivel, identifica los MÓDULOS (pueden estar indicados como Módulo, Unidad, Bloque, etc.)
-3. Dentro de cada módulo, identifica las SECCIONES o temas principales
-4. Dentro de cada sección, identifica las LECCIONES o clases individuales
-5. Si el documento lista temas como "Saludos formales", "Números del 1 al 10", etc., estos son LECCIONES
-6. Si no hay una estructura clara de secciones, agrupa las lecciones relacionadas en secciones lógicas
-7. Mantén el orden correcto de todos los elementos según aparecen en el documento
-8. Si encuentras información sobre duración (meses, semanas, horas), inclúyela en estimated_minutes
-9. Asigna la dificultad correcta según el nivel: niveles iniciales = "basico", intermedios = "intermedio", avanzados = "avanzado"
-10. El content_type de las lecciones debe ser "video" por defecto
+REGLAS:
+1. NIVELES = Básico, Intermedio, Avanzado (o Nivel 1, 2, 3)
+2. MÓDULOS = Unidades o bloques dentro de cada nivel
+3. SECCIONES = Agrupa las lecciones por tema. Si no hay agrupación clara, crea una sección "Contenido" por módulo
+4. LECCIONES = Cada tema individual (ej: "Saludos formales", "Números del 1 al 10")
+5. Cada lección debe tener: name, order (número secuencial), content_type: "video"
+6. Si el PDF menciona "16 clases" en un módulo, crea 16 lecciones con los temas listados
 
-IMPORTANTE: Responde ÚNICAMENTE con el JSON válido, sin explicaciones adicionales ni markdown."""
+RESPONDE SOLO CON EL JSON, sin texto adicional, sin markdown, sin explicaciones."""
 
     # Call Gemini with PDF
     try:
@@ -223,25 +205,39 @@ IMPORTANTE: Responde ÚNICAMENTE con el JSON válido, sin explicaciones adiciona
         )
 
         result_text = response.text.strip()
+        logger.info(f"Gemini raw response length: {len(result_text)} chars")
+        logger.info(f"Gemini response preview: {result_text[:300]}...")
 
-        # Clean up response if wrapped in markdown
-        if result_text.startswith("```json"):
-            result_text = result_text[7:]
-        if result_text.startswith("```"):
-            result_text = result_text[3:]
-        if result_text.endswith("```"):
-            result_text = result_text[:-3]
+        # Clean up response - remove markdown code blocks
+        import re
+        import json
+
+        # Try to extract JSON from markdown code blocks
+        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', result_text)
+        if json_match:
+            result_text = json_match.group(1)
+            logger.info("Extracted JSON from markdown code block")
+        else:
+            # Try to find JSON object directly
+            json_start = result_text.find('{')
+            json_end = result_text.rfind('}')
+            if json_start != -1 and json_end != -1:
+                result_text = result_text[json_start:json_end + 1]
+                logger.info("Extracted JSON by finding braces")
+
+        result_text = result_text.strip()
+        logger.info(f"Cleaned JSON preview: {result_text[:200]}...")
 
         # Parse JSON
-        import json
         try:
-            structure_data = json.loads(result_text.strip())
+            structure_data = json.loads(result_text)
+            logger.info(f"Successfully parsed JSON with keys: {list(structure_data.keys())}")
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse Gemini response as JSON: {e}")
-            logger.error(f"Response text: {result_text[:500]}...")
+            logger.error(f"Full response text: {result_text}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="AI returned invalid structure. Please try again."
+                detail=f"AI returned invalid JSON structure. Error: {str(e)[:100]}"
             )
 
         # Validate and convert to response model
