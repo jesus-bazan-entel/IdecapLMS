@@ -6,7 +6,6 @@ Supports both static prompts (backward compatible) and configurable prompts (uni
 import json
 import logging
 from typing import Optional, List, Dict, Any
-from datetime import datetime
 
 from google import genai
 from google.genai import types
