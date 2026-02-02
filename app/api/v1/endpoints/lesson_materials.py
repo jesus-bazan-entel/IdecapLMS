@@ -6,7 +6,7 @@ import logging
 import uuid
 from datetime import datetime
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Query
 from pydantic import BaseModel, Field
 
 from app.core.firebase_admin import get_firestore
@@ -35,10 +35,10 @@ class MaterialResponse(BaseModel):
     type: str
     url: str
     description: Optional[str] = None
-    file_size: Optional[int] = Field(None, alias="fileSize")
-    mime_type: Optional[str] = Field(None, alias="mimeType")
-    uploaded_at: Optional[datetime] = Field(None, alias="uploadedAt")
-    lesson_id: Optional[str] = Field(None, alias="lessonId")
+    file_size: Optional[int] = Field(default=None, alias="fileSize")
+    mime_type: Optional[str] = Field(default=None, alias="mimeType")
+    uploaded_at: Optional[datetime] = Field(default=None, alias="uploadedAt")
+    lesson_id: Optional[str] = Field(default=None, alias="lessonId")
 
     class Config:
         populate_by_name = True
@@ -246,8 +246,8 @@ async def add_link_material(
 async def upload_material(
     lesson_id: str,
     file: UploadFile = File(...),
-    title: str = Form(None),
-    description: str = Form(None),
+    title: Optional[str] = Form(default=None),
+    description: Optional[str] = Form(default=None),
     current_user: dict = Depends(require_author),
 ):
     """
@@ -346,7 +346,7 @@ async def upload_material(
 @router.delete("/materials/{material_id}")
 async def delete_material(
     material_id: str,
-    lesson_id: str = None,
+    lesson_id: Optional[str] = Query(default=None),
     current_user: dict = Depends(require_author),
 ):
     """
