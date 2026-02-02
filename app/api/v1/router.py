@@ -23,6 +23,7 @@ from app.api.v1.endpoints.ai_studio import (
     flashcards,
     quizzes,
     lesson_content,
+    course_structure,
 )
 
 api_router = APIRouter()
@@ -136,4 +137,10 @@ api_router.include_router(
     lesson_content.router,
     prefix="/ai",
     tags=["AI Lesson Content"]
+)
+
+api_router.include_router(
+    course_structure.router,
+    prefix="/ai-studio",
+    tags=["AI Course Structure"]
 )
