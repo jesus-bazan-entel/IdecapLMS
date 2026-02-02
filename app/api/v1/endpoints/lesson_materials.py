@@ -11,8 +11,7 @@ from pydantic import BaseModel, Field
 
 from app.core.firebase_admin import get_firestore
 from app.core.security import get_current_user, require_author
-from app.services.storage_service import get_storage_service, StoragePaths
-from app.models.domain.hierarchy import LessonMaterial
+from app.services.storage_service import get_storage_service
 
 logger = logging.getLogger(__name__)
 
