@@ -286,6 +286,42 @@ def _progression_rules_to_firestore(rules: Optional[ProgressionRules]) -> Option
     }
 
 
+# ============== UTILITY ENDPOINTS ==============
+
+@router.post("/{course_id}/recalculate-lessons")
+async def recalculate_lessons_count(
+    course_id: str,
+    current_user: dict = Depends(require_author),
+):
+    """Recalculate the lesson count for a course by counting all lessons in hierarchy"""
+    db = get_firestore()
+
+    course_ref = _get_course_ref(db, course_id)
+    course = course_ref.get()
+    if not course.exists:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    # Count all lessons in all levels > modules > sections
+    total_lessons = 0
+    levels_ref = _get_levels_ref(db, course_id)
+    for level_doc in levels_ref.stream():
+        modules_ref = _get_modules_ref(db, course_id, level_doc.id)
+        for module_doc in modules_ref.stream():
+            sections_ref = _get_sections_ref(db, course_id, level_doc.id, module_doc.id)
+            for section_doc in sections_ref.stream():
+                lessons_ref = _get_lessons_ref(db, course_id, level_doc.id, module_doc.id, section_doc.id)
+                for _ in lessons_ref.stream():
+                    total_lessons += 1
+
+    # Update the course meta
+    course_data = course.to_dict()
+    meta = course_data.get("courseMeta", {})
+    meta["lessonsCount"] = total_lessons
+    course_ref.update({"courseMeta": meta})
+
+    return {"course_id": course_id, "lessons_count": total_lessons, "message": "Lesson count updated"}
+
+
 # ============== LEVEL ENDPOINTS ==============
 @router.get("/{course_id}/levels", response_model=List[LevelResponse])
 async def list_levels(
