@@ -12,7 +12,6 @@ from app.api.v1.endpoints import (
     categories,
     dashboard,
     access_codes,
-    lesson_materials,
 )
 from app.api.v1.endpoints.ai_studio import (
     audio,
@@ -70,12 +69,6 @@ api_router.include_router(
     hierarchy.router,
     prefix="/courses",
     tags=["Course Hierarchy"]
-)
-
-# Lesson Materials
-api_router.include_router(
-    lesson_materials.router,
-    tags=["Lesson Materials"]
 )
 
 # Categories
