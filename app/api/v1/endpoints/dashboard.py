@@ -5,7 +5,7 @@ Statistics and charts data
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from typing import Optional, List, Dict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 
 from app.core.security import get_current_user, require_admin
@@ -105,10 +105,10 @@ async def get_dashboard_stats(
     total_students = len(students)
 
     # Count students from last 30 days
-    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
     recent_students = [
         s for s in students
-        if (s.to_dict().get("createdAt") or datetime.min) > thirty_days_ago
+        if (s.to_dict().get("createdAt") or datetime.min.replace(tzinfo=timezone.utc)) > thirty_days_ago
     ]
     students_change, students_trend = _calculate_change(len(recent_students), total_students - len(recent_students))
 
@@ -190,7 +190,7 @@ async def get_users_chart(
     students = list(students_query.stream())
 
     # Group by date
-    start_date = datetime.utcnow() - timedelta(days=days)
+    start_date = datetime.now(timezone.utc) - timedelta(days=days)
     registrations_by_date = defaultdict(int)
 
     for student in students:
@@ -202,7 +202,7 @@ async def get_users_chart(
     # Generate all dates in range
     data = []
     current_date = start_date
-    while current_date <= datetime.utcnow():
+    while current_date <= datetime.now(timezone.utc):
         date_str = current_date.strftime("%Y-%m-%d")
         data.append({
             "date": date_str,
