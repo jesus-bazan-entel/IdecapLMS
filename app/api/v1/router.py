@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     dashboard,
     access_codes,
     lesson_materials,
+    student_portal,
 )
 from app.api.v1.endpoints.ai_studio import (
     audio,
@@ -56,6 +57,13 @@ api_router.include_router(
     access_codes.router,
     prefix="/access-codes",
     tags=["Access Codes"]
+)
+
+# Student Portal (mobile app endpoints)
+api_router.include_router(
+    student_portal.router,
+    prefix="/student",
+    tags=["Student Portal"]
 )
 
 # Courses
