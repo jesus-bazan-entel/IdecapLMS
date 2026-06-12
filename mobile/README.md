@@ -39,6 +39,27 @@ npx expo start
 
 Escanea el código QR con la app **Expo Go** (Android/iOS), o pulsa `a`/`i` para abrir en emulador, o `w` para la versión web.
 
+## Deploy (PWA en Firebase Hosting)
+
+La app web es una **PWA instalable**: manifest, iconos, service worker con soporte offline. Los usuarios abren la URL y eligen «Añadir a pantalla de inicio».
+
+**Deploy manual** (requiere estar autenticado en Firebase):
+
+```bash
+npx firebase-tools login        # solo la primera vez
+cd mobile && npm run deploy     # build + deploy al proyecto apololms
+```
+
+La app queda en `https://apololms.web.app` (y `https://apololms.firebaseapp.com`).
+
+**Deploy automático**: el workflow `.github/workflows/deploy-web.yml` despliega en cada push a `main` que toque `mobile/`. Requiere configurar una vez el secreto `FIREBASE_SERVICE_ACCOUNT_APOLOLMS` en GitHub (Settings → Secrets → Actions) con el JSON de una cuenta de servicio con rol *Firebase Hosting Admin*; se genera en la consola de Firebase o con:
+
+```bash
+npx firebase-tools init hosting:github
+```
+
+La configuración del hosting está en `firebase.json` (raíz del repo): sirve `mobile/dist`, reescribe todas las rutas a `index.html` (necesario para expo-router) y cachea los bundles con hash de forma inmutable.
+
 ## Estructura
 
 ```
