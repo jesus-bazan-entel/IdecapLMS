@@ -30,7 +30,7 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "build:web": "expo export --platform web && node scripts/postexport.js",
-    "deploy": "npm run build:web && npx firebase-tools deploy --only hosting --project apololms"
+    "deploy": "npm run build:web && npx firebase-tools deploy --only hosting --project portulingo-3aac5"
   },
   "private": true
 }

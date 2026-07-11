@@ -47,12 +47,12 @@ La app web es una **PWA instalable**: manifest, iconos, service worker con sopor
 
 ```bash
 npx firebase-tools login        # solo la primera vez
-cd mobile && npm run deploy     # build + deploy al proyecto apololms
+cd mobile && npm run deploy     # build + deploy al proyecto portulingo-3aac5
 ```
 
-La app queda en `https://apololms.web.app` (y `https://apololms.firebaseapp.com`).
+La app queda en `https://portulingo-3aac5.web.app` (y `https://portulingo-3aac5.firebaseapp.com`).
 
-**Deploy automático**: el workflow `.github/workflows/deploy-web.yml` despliega en cada push a `main` que toque `mobile/`. Requiere configurar una vez el secreto `FIREBASE_SERVICE_ACCOUNT_APOLOLMS` en GitHub (Settings → Secrets → Actions) con el JSON de una cuenta de servicio con rol *Firebase Hosting Admin*; se genera en la consola de Firebase o con:
+**Deploy automático**: el workflow `.github/workflows/deploy-web.yml` despliega en cada push a `main` que toque `mobile/`. Requiere configurar una vez el secreto `FIREBASE_SERVICE_ACCOUNT_PORTULINGO` en GitHub (Settings → Secrets → Actions) con el JSON de una cuenta de servicio con rol *Firebase Hosting Admin*; se genera en la consola de Firebase o con:
 
 ```bash
 npx firebase-tools init hosting:github
